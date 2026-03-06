@@ -1,0 +1,24 @@
+{
+  "name": "codemode-local",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "bun@1.2.23",
+  "type": "module",
+  "scripts": {
+    "dev:ado-codemode-mcp": "tsx apps/ado-codemode-mcp/src/index.ts",
+    "dev:bridge": "tsx apps/azdo-bridge/src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cloudflare/codemode": "^0.1.2",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "ai": "^6.0.116",
+    "jsonc-parser": "^3.3.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

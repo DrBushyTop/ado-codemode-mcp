@@ -1,0 +1,8 @@
+codemode-repo
+azdo-mcp
+node_modules/
+dist/
+.tmp/
+*.log
+.opencode
+package-lock.json
