@@ -78,6 +78,27 @@ function serializeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isRetryableCallbackReadError(error: unknown): boolean {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "ENOENT"
+  ) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error instanceof SyntaxError ||
+    error.message.includes("Unexpected end of JSON input") ||
+    error.message.includes("Unexpected EOF")
+  );
+}
+
 function truncateLogs(logs: string[], maxBytes: number): string[] {
   const joined = logs.join("\n");
   if (Buffer.byteLength(joined, "utf8") <= maxBytes) {
@@ -365,12 +386,22 @@ export class GvisorContainerExecutor implements Executor {
         continue;
       }
 
+      const requestPath = path.join(callbackDirectory, fileName);
+      let request: SandboxCallbackRequest;
+
+      try {
+        const requestText = await readFile(requestPath, "utf8");
+        request = JSON.parse(requestText) as SandboxCallbackRequest;
+      } catch (error) {
+        if (isRetryableCallbackReadError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+
       state.handledFiles.add(fileName);
       state.handledCount += 1;
-
-      const requestPath = path.join(callbackDirectory, fileName);
-      const requestText = await readFile(requestPath, "utf8");
-      const request = JSON.parse(requestText) as SandboxCallbackRequest;
       const response: SandboxCallbackResponse = { id: request.id };
 
       try {

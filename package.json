@@ -7,6 +7,7 @@
   "scripts": {
     "dev:ado-codemode-mcp": "tsx apps/ado-codemode-mcp/src/index.ts",
     "dev:bridge": "tsx apps/azdo-bridge/src/index.ts",
+    "test:ado-codemode-mcp": "node --test --import tsx apps/ado-codemode-mcp/src/logic.test.ts packages/sandbox-executor/src/GvisorContainerExecutor.test.ts packages/azdo-mcp-client/src/index.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

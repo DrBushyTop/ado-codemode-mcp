@@ -11,12 +11,14 @@ export interface AzdoToolInfo {
   name: string;
   description: string;
   inputSchema: unknown;
+  outputSchema?: unknown;
 }
 
 export interface AzdoToolCallResponse {
   isError: boolean;
   text: string;
   structuredContent?: unknown;
+  data?: unknown;
   content: unknown;
 }
 
@@ -101,6 +103,31 @@ function asToolResult(result: unknown): {
   };
 }
 
+function parseJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeToolData(result: {
+  structuredContent?: unknown;
+  content?: unknown;
+}): unknown {
+  if (result.structuredContent !== undefined) {
+    return result.structuredContent;
+  }
+
+  const text = toolText(result);
+  return parseJsonText(text);
+}
+
 function redactSecrets(input: string): string {
   return input
     .replace(/([A-Za-z0-9]{20,})/g, (value) => {
@@ -145,7 +172,8 @@ export class LocalStdioAzdoBridge {
       return tools.map((tool) => ({
         name: tool.name,
         description: tool.description ?? "",
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined
       }));
     });
   }
@@ -172,6 +200,7 @@ export class LocalStdioAzdoBridge {
           isError: Boolean(result.isError),
           text: toolText(result),
           structuredContent: result.structuredContent,
+          data: normalizeToolData(result),
           content: result.content
         };
       } catch (error) {
@@ -190,6 +219,7 @@ export class LocalStdioAzdoBridge {
               isError: Boolean(result.isError),
               text: toolText(result),
               structuredContent: result.structuredContent,
+              data: normalizeToolData(result),
               content: result.content
             };
           } catch (retryError) {
