@@ -30,11 +30,6 @@ export interface SearchResponse {
     apiVersion: "defaulted-per-operation";
   };
   workflow?: string[] | undefined;
-  starterRecipes?: Array<{
-    name: string;
-    operations: string[];
-    notes: string;
-  }>;
   executeInput: {
     code: string;
   };
@@ -63,7 +58,7 @@ export function buildCapabilitySummary(
       "The server already binds the Azure DevOps organization and default api-version handling."
     ],
     workflow: [
-      "Call MCP search once first to inspect the Azure DevOps REST API catalog and choose the relevant operationIds.",
+      "Call MCP search once first to narrow the smallest useful set of operationIds for the task.",
       "Then call execute once with a single combined JavaScript program that uses only those operationIds.",
       "Avoid splitting one task across many top-level execute invocations.",
       "Inside the single execute call, chain requests through response.data and do filtering, joins, and summarization in JavaScript.",
@@ -84,59 +79,28 @@ export function buildCapabilitySummary(
 }
 
 function searchCatalogNote(operations: AzureDevOpsSearchOperation[]): string[] {
-  const projectList = operations.find(
-    (operation) => operation.operationId === "Projects_List"
+  const operationsWithPathParams = operations.some(
+    (operation) => operation.parameters.some((parameter) => parameter.in === "path")
   );
-  const wiql = operations.find(
-    (operation) => operation.operationId === "Wiql_Query_By_Wiql"
+  const operationsWithBodies = operations.some(
+    (operation) => operation.requestBody !== undefined
   );
-  const batch = operations.find(
-    (operation) => operation.operationId === "Work_Items_Get_Work_Items_Batch"
+  const operationsWithSchemas = operations.some(
+    (operation) => operation.responseSchema !== undefined
   );
 
   return [
     "Search receives sanitized operations: organization and default api-version are already bound by the server and omitted from visible parameters.",
-    projectList
-      ? `For project discovery, start with ${projectList.operationId}.`
-      : "For project discovery, start with a project-list operation.",
-    wiql
-      ? `For work item querying, a WIQL operation such as ${wiql.operationId} is usually the direct path.`
-      : "For work item querying, a WIQL operation is usually the direct path.",
-    batch
-      ? `For enriching work item IDs into full details, use a batch get operation such as ${batch.operationId}.`
-      : "For enriching work item IDs into full details, use a batch get operation."
+    operationsWithPathParams
+      ? "If an operation still shows required path parameters, discover and provide only those remaining values."
+      : "Focus on query/body inputs; server-bound path context has already been applied.",
+    operationsWithBodies
+      ? "If an operation has a requestBody schema, use that schema directly instead of guessing payload shape."
+      : "Prefer operations that do not require request bodies when they are sufficient for the task.",
+    operationsWithSchemas
+      ? "Use responseSchema to plan chaining and prefer response.data for later calls."
+      : "If responseSchema is absent, rely on response.data structure from earlier calls before broadening search."
   ];
-}
-
-function starterRecipes(operations: AzureDevOpsSearchOperation[]): Array<{
-  name: string;
-  operations: string[];
-  notes: string;
-}> {
-  const hasProjects = operations.some((operation) => operation.operationId === "Projects_List");
-  const hasWiql = operations.some(
-    (operation) => operation.operationId === "Wiql_Query_By_Wiql"
-  );
-  const hasBatch = operations.some(
-    (operation) => operation.operationId === "Work_Items_Get_Work_Items_Batch"
-  );
-
-  const recipes: Array<{ name: string; operations: string[]; notes: string }> = [];
-
-  if (hasProjects && hasWiql && hasBatch) {
-    recipes.push({
-      name: "Recent work items by project and type",
-      operations: [
-        "Projects_List",
-        "Wiql_Query_By_Wiql",
-        "Work_Items_Get_Work_Items_Batch"
-      ],
-      notes:
-        "Use Projects_List to choose the project, Wiql_Query_By_Wiql to fetch the newest matching work item IDs ordered by ChangedDate, then Work_Items_Get_Work_Items_Batch to retrieve the display fields."
-    });
-  }
-
-  return recipes;
 }
 
 export async function resolveToolExecution<T>(
@@ -202,7 +166,9 @@ export function createExecutionCodeTool(
       "For tasks that need several Azure DevOps reads or writes, combine them into one program and chain data from earlier calls into later ones.",
       "Prefer one top-level execute call per user task. Do not break a single task into many execute calls unless you need a checkpoint or hit output limits.",
       "Do lightweight filtering, aggregation, and formatting inside that one program instead of returning raw payloads from many separate execute calls.",
-      "Do not attempt network access outside the provided Azure DevOps request helper, shelling out, or arbitrary filesystem access.",
+      "Do not probe globals, inspect the runtime environment, or use raw fetch. Use only the provided Azure DevOps request helper for external data.",
+      "Do not inspect repo files or local config when the Azure DevOps API path is already available.",
+      "Do not attempt shelling out or arbitrary filesystem access.",
       "Return concise JSON-friendly data from the function."
     ].join("\n\n")
   });
@@ -234,7 +200,6 @@ export async function runSearch(
       apiVersion: "defaulted-per-operation"
     },
     workflow: [...(summary.workflow ?? []), ...searchCatalogNote(searchOperations)],
-    starterRecipes: starterRecipes(searchOperations),
     executeInput: summary.executeInput
   };
 }

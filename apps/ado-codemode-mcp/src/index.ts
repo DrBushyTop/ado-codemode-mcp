@@ -89,7 +89,7 @@ server.tool(
       .string()
       .min(1)
       .describe(
-        "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary. Prefer one focused search that returns a compact array of `{ operationId, method, path, description, parameters, requestBody, responseSchema }`. Do not search repeatedly once you already have a viable project-list + work-item-query path. Example: async (operations) => operations.filter((op) => /projects_list|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, description: op.description, parameters: op.parameters, requestBody: op.requestBody ?? null, responseSchema: op.responseSchema ?? null }))"
+        "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary. Prefer one focused search that returns a compact array of `{ operationId, method, path, description, parameters, requestBody, responseSchema }`. Do not search repeatedly once you already have a viable project-list + team-list + work-item-query + batch-details path. Example: async (operations) => operations.filter((op) => /projects_list|categorized_teams_get|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, description: op.description, parameters: op.parameters, requestBody: op.requestBody ?? null, responseSchema: op.responseSchema ?? null }))"
       )
   },
   async ({ code }) => contentText(await runSearch(catalog, executor, code))
@@ -150,7 +150,7 @@ server.tool(
       .string()
       .min(1)
       .describe(
-        "JavaScript async arrow function to execute. Prefer a single program that calls only the relevant Azure DevOps operationIds selected from MCP search, performs filtering/aggregation inside that one program, and chains on `response.data` from previous calls. Do not pass `organization`; the server already binds it for every request."
+        "JavaScript async arrow function to execute. Prefer a single program that calls only the relevant Azure DevOps operationIds selected from MCP search, performs filtering/aggregation inside that one program, and chains on `response.data` from previous calls. Do not pass `organization`; the server already binds it for every request. Do not probe globals or use raw `fetch`; use only `codemode.azdoRequest(...)`."
       )
   },
   async ({ code }) => {

@@ -8,6 +8,7 @@ import type { AccountInfo, AuthenticationResult } from "@azure/msal-node";
 import { PublicClientApplication } from "@azure/msal-node";
 import open from "open";
 import type { AzureDevOpsDirectConfig } from "./config.js";
+import { getOrgTenant } from "./org-tenant.js";
 
 const scopes = ["499b84ac-1321-427f-aa17-267ca6975798/.default"];
 
@@ -111,22 +112,43 @@ function createCredentialProvider(tenantId: string | undefined): AzureDevOpsAuth
   };
 }
 
+function createOAuthProvider(tenantIdProvider: () => Promise<string | undefined>): AzureDevOpsAuthProvider {
+  let authenticator: OAuthAuthenticator | undefined;
+
+  return {
+    async getAuthorizationHeader(): Promise<string> {
+      if (!authenticator) {
+        authenticator = new OAuthAuthenticator(await tenantIdProvider());
+      }
+
+      return `Bearer ${await authenticator.getAccessToken()}`;
+    }
+  };
+}
+
 export function createAzureDevOpsAuthProvider(
   config: AzureDevOpsDirectConfig
 ): AzureDevOpsAuthProvider {
+  const tenantProvider = async (): Promise<string | undefined> => {
+    if (config.tenant) {
+      return config.tenant;
+    }
+
+    return getOrgTenant(config.organization);
+  };
+
   switch (config.authentication) {
     case "envvar":
       return createPersonalAccessTokenProvider();
     case "azcli":
     case "env":
-      return createCredentialProvider(config.tenant);
-    default: {
-      const authenticator = new OAuthAuthenticator(config.tenant);
       return {
         async getAuthorizationHeader(): Promise<string> {
-          return `Bearer ${await authenticator.getAccessToken()}`;
+          return createCredentialProvider(await tenantProvider()).getAuthorizationHeader();
         }
       };
+    default: {
+      return createOAuthProvider(tenantProvider);
     }
   }
 }
