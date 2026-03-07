@@ -40,7 +40,7 @@ Docker works the same way:
 docker build -t codemode-sandbox-runner:local docker/sandbox-runner
 ```
 
-## 4. Install Node dependencies
+## 4. Install dependencies
 
 ```bash
 bun install
@@ -54,18 +54,39 @@ Export at least:
 export AZDO_ORGANIZATION=your-organization
 ```
 
-Optional Azure DevOps MCP startup tuning:
+Optional auth tuning:
 
 ```bash
 export AZDO_AUTHENTICATION=interactive
-export AZDO_DOMAINS=all
-export AZDO_MCP_BINARY=npx
 ```
+
+Supported auth modes are:
+
+- `interactive`
+- `azcli`
+- `env`
+- `envvar`
 
 If you need an explicit tenant:
 
 ```bash
 export AZDO_TENANT=00000000-0000-0000-0000-000000000000
+```
+
+If you want to use a PAT from the environment:
+
+```bash
+export AZDO_AUTHENTICATION=envvar
+export ADO_MCP_AUTH_TOKEN=your-pat
+```
+
+Optional spec tuning:
+
+```bash
+export AZDO_SPEC_REPO_OWNER=MicrosoftDocs
+export AZDO_SPEC_REPO_NAME=vsts-rest-api-specs
+export AZDO_SPEC_REPO_REF=master
+export AZDO_SPEC_AREAS=core,wit
 ```
 
 Optional sandbox tuning:
@@ -103,19 +124,11 @@ Use that only for local debugging. It is not a sandbox.
 bun run dev:ado-codemode-mcp
 ```
 
-At startup, `apps/ado-codemode-mcp/src/index.ts` reads `AZDO_*` and `CODEMODE_*` env vars, then starts the Azure DevOps MCP child process itself over stdio.
+At startup, `apps/ado-codemode-mcp/src/index.ts` reads `AZDO_*` and `CODEMODE_*` env vars, loads the Azure DevOps Swagger catalog, and prepares the trusted REST caller.
 
-The OpenCode config only needs to launch `ado-codemode-mcp`. The gateway itself starts the Azure DevOps MCP process from its environment variables.
-
-OpenCode remains the planner and code generator. The gateway only exposes capability discovery plus sandboxed `@cloudflare/codemode` execution.
+OpenCode remains the planner and code generator. The gateway only exposes API discovery plus sandboxed execution.
 
 ## 7. Useful checks
-
-List the bridged Azure DevOps tools:
-
-```bash
-bun run dev:bridge -- list-tools
-```
 
 Type-check the repo:
 
@@ -123,8 +136,14 @@ Type-check the repo:
 bun run typecheck
 ```
 
+Run the focused test suite:
+
+```bash
+bun run test:ado-codemode-mcp
+```
+
 Execute a quick OpenCode smoke test:
 
 ```bash
-opencode run --print-logs --log-level DEBUG "Use the ado-codemode-mcp MCP server. Call its execute tool with code that lists the first three Azure DevOps tool names, then summarize the result."
+opencode run --print-logs --log-level DEBUG "Use the ado-codemode-mcp MCP server. Call its search tool to find Azure DevOps operations for listing projects, then summarize the returned operationIds."
 ```

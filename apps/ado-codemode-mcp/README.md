@@ -13,12 +13,11 @@ export ADO_CODEMODE_MCP_EXPOSE_DEBUG_TOOLS=1
 
 ## What it does
 
-- starts the Azure DevOps MCP process on the host
+- loads a static Azure DevOps REST API catalog from the official Swagger repo
 - keeps Azure DevOps credentials outside the sandbox
 - runs generated JavaScript in a fresh sandbox per request
-- exposes only two sandbox helpers to generated code:
-  - `codemode.azdoListTools({})`
-  - `codemode.azdoCallTool({ tool, args })`
+- exposes one execution helper to generated code:
+  - `codemode.azdoRequest({ operationId, pathParams, query, headers, body, apiVersion })`
 
 ## Flow at a glance
 
@@ -26,23 +25,24 @@ export ADO_CODEMODE_MCP_EXPOSE_DEBUG_TOOLS=1
 flowchart LR
     OC[OpenCode]
     MCP[ado-codemode-mcp]
+    CATALOG[Azure DevOps REST catalog]
     SANDBOX[Sandboxed Code Mode run]
-    BRIDGE[Host Azure DevOps bridge]
-    ADO[Azure DevOps MCP child process]
+    API[Trusted Azure DevOps REST caller]
 
     OC --> MCP
+    MCP --> CATALOG
     MCP --> SANDBOX
-    SANDBOX --> BRIDGE
-    BRIDGE --> ADO
+    SANDBOX --> API
 ```
 
 ## Recommended usage pattern
 
-Use `search` first when the model needs to discover tool names or capability shape.
+Use `search` first when the model needs to discover relevant `operationId`s and request/response shape.
 
 Use `execute` for the real task, and prefer one combined program per task. Inside that one program:
 
-- make multiple Azure DevOps helper calls as needed
+- make multiple Azure DevOps API calls as needed
+- chain on `response.data`
 - do lightweight aggregation, filtering, and shaping there
 - return compact JSON-friendly output
 
@@ -52,8 +52,6 @@ Avoid splitting one task across many top-level `execute` calls unless:
 - the task needs a deliberate checkpoint
 - you are debugging a failing step in isolation
 
-The endpoint descriptions in the MCP server intentionally reinforce this pattern so planner models are nudged toward one combined execute call where possible.
-
 ## Local runtime model
 
 The current local-first implementation uses:
@@ -61,9 +59,9 @@ The current local-first implementation uses:
 - `podman` by default
 - `runsc` by default
 - `--network=none`
-- a file-backed callback channel between the sandbox and host bridge
+- a file-backed callback channel between the sandbox and trusted host helper
 
-The default sandbox limits are intentionally higher than the first prototype:
+The default sandbox limits are:
 
 - timeout: 120s
 - callback timeout: 30s
@@ -71,7 +69,7 @@ The default sandbox limits are intentionally higher than the first prototype:
 - result: 256 KB
 - callbacks: 200
 
-These can still be overridden with env vars:
+These can be overridden with env vars:
 
 - `CODEMODE_SANDBOX_TIMEOUT_MS`
 - `CODEMODE_SANDBOX_CALLBACK_TIMEOUT_MS`
@@ -83,7 +81,7 @@ These can still be overridden with env vars:
 
 This repo is local-first, but the intended shape for a production-like deployment is similar:
 
-- a trusted gateway service owns Azure DevOps MCP startup and credentials
+- a trusted gateway service owns Azure DevOps auth and REST execution
 - generated code runs in an isolated sandbox tier
 - only a narrow callback API crosses from sandbox to host
 - sandbox egress stays disabled unless explicitly needed
@@ -93,4 +91,4 @@ For a future AKS deployment, the local `runsc` setup can evolve into a remote sa
 
 - OpenCode or another planner calls the gateway
 - the gateway dispatches generated code to an isolated sandbox worker
-- the gateway remains the only component allowed to talk to Azure DevOps MCP with credentials
+- the gateway remains the only component allowed to talk to Azure DevOps with credentials

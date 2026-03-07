@@ -2,13 +2,13 @@
 
 ## Azure DevOps auth stays outside the sandbox
 
-The gateway never injects Azure DevOps tokens into sandbox environment variables or bind mounts. All auth remains in the host-side Azure DevOps MCP process launched by the gateway itself.
+The gateway never injects Azure DevOps tokens into sandbox environment variables or bind mounts. All auth remains in the trusted host process.
 
-## The gateway owns Azure DevOps MCP startup
+## The gateway owns Azure DevOps REST execution
 
-OpenCode starts only `ado-codemode-mcp`. The gateway derives the Azure DevOps MCP child-process command from its own environment variables and spawns that process itself. This removes hidden coupling to OpenCode MCP config entries and avoids duplicate MCP registrations.
+OpenCode starts only `ado-codemode-mcp`. The gateway itself loads the Azure DevOps REST contract, resolves the org tenant, acquires tokens, and performs Azure DevOps requests on behalf of sandboxed code.
 
-That means Azure DevOps MCP is not registered as a separate OpenCode MCP server in the normal setup. It is an implementation detail owned by `ado-codemode-mcp`.
+That keeps Azure DevOps auth and transport details out of the OpenCode MCP registry.
 
 ## OpenCode remains the code generator
 
@@ -38,11 +38,25 @@ That keeps the `ado-codemode-mcp` contract small and production-like even when t
 
 ## One execute call per task is the preferred path
 
-The most reliable way to use Code Mode here is to combine related Azure DevOps helper calls into one sandbox program. That reduces repeated top-level orchestration, lowers bridge churn, and gives the model a better place to aggregate and trim results.
+The most reliable way to use Code Mode here is to combine related Azure DevOps API calls into one sandbox program. That reduces repeated top-level orchestration, lowers churn, and gives the model a better place to aggregate and trim results.
 
-## Mutation support lives behind the trusted gateway boundary
+## Supporting execute calls can still happen
 
-The bridge now exposes the Azure DevOps MCP surface rather than a read-only subset. The trust model therefore depends more heavily on the sandbox boundary, the narrow callback API, and future audit or approval controls for higher-risk operations.
+One execute call per task is the target, but an occasional second execute call is acceptable when the first narrowed search set misses one required supporting operation, such as project or team discovery. The important thing is to keep that bounded and avoid fallback churn.
+
+## We switched away from wrapping Azure DevOps MCP
+
+The earlier experiment wrapped the Azure DevOps MCP server and exposed its tool surface through Code Mode. That version is preserved on branch `feat/mcp-wrap`, but it did not work well enough as the main approach.
+
+The direct REST catalog won because:
+
+- official Swagger specs expose richer input and output schemas
+- the search surface can be sanitized independently from execute
+- the model can reason about response data flow more reliably inside one execute call
+
+## Generic guidance beats action-specific recipes
+
+The model behaves better when the system gives generic rules about how to use `search` and `execute` rather than task-specific WIQL or work-item playbooks. The catalog and schemas should carry most of the guidance load.
 
 ## Warm containers are deferred
 
