@@ -1,113 +1,268 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { Executor } from "@cloudflare/codemode";
 import {
+  extractOperationsFromSpec,
+  selectLatestSpecFiles,
+  toSearchOperation,
+  type AzureDevOpsApiOperation,
+  type AzureDevOpsApiResponse
+} from "./catalog.js";
+import {
+  FakeApiCaller,
   InlineExecutor,
   createExecutionCodeTool,
   runExecute,
-  runSearch,
-  type BridgeLike
+  runSearch
 } from "./logic.js";
 
-function createBridge(): BridgeLike {
-  return {
-    async listTools() {
-      return [
+function createOperations(): AzureDevOpsApiOperation[] {
+  return [
+    {
+      operationId: "Projects_List",
+      rawOperationId: "Projects_List",
+      displayName: "List projects",
+      area: "core",
+      specFile: "specification/core/7.2/projects.json",
+      specVersion: "7.2-preview",
+      host: "dev.azure.com",
+      basePath: "/",
+      method: "GET",
+      path: "/{organization}/_apis/projects",
+      summary: "List projects",
+      description: "Retrieve projects",
+      tags: ["Projects"],
+      preview: false,
+      apiVersion: "7.2-preview.1",
+      consumes: [],
+      produces: ["application/json"],
+      parameters: [
         {
-          name: "core_list_projects",
-          description: "List projects",
-          inputSchema: {},
-          outputSchema: { type: "array", items: { type: "object" } }
-        },
-        {
-          name: "wit_get_query",
-          description: "Get a work item query",
-          inputSchema: {},
-          outputSchema: { type: "object", properties: { id: { type: "string" } } }
-        },
-        {
-          name: "search_workitem",
-          description: "Search work items",
-          inputSchema: {},
-          outputSchema: { type: "object", properties: { count: { type: "number" } } }
+          name: "organization",
+          in: "path",
+          description: "Organization",
+          required: true,
+          type: "string"
         }
-      ];
+      ],
+      requestBody: undefined,
+      responseSchema: { type: "object", properties: { items: { type: "array" } } },
+      responseDescription: "Projects",
+      securityScopes: ["vso.project"]
     },
-    async callTool(toolName, args) {
-      return { toolName, args };
+    {
+      operationId: "Wiql_Query_By_Wiql",
+      rawOperationId: "Wiql_Query By Wiql",
+      displayName: "Run WIQL",
+      area: "wit",
+      specFile: "specification/wit/7.2/workItemTracking.json",
+      specVersion: "7.2-preview",
+      host: "dev.azure.com",
+      basePath: "/",
+      method: "POST",
+      path: "/{organization}/{project}/_apis/wit/wiql",
+      summary: "Run WIQL",
+      description: "Run a WIQL query",
+      tags: ["Wiql"],
+      preview: false,
+      apiVersion: "7.2-preview.2",
+      consumes: ["application/json"],
+      produces: ["application/json"],
+      parameters: [
+        {
+          name: "organization",
+          in: "path",
+          description: "Organization",
+          required: true,
+          type: "string"
+        },
+        {
+          name: "project",
+          in: "path",
+          description: "Project",
+          required: true,
+          type: "string"
+        }
+      ],
+      requestBody: {
+        name: "body",
+        in: "body",
+        description: "WIQL body",
+        required: true,
+        schema: { type: "object", properties: { query: { type: "string" } } }
+      },
+      responseSchema: { type: "object", properties: { workItems: { type: "array" } } },
+      responseDescription: "Query results",
+      securityScopes: ["vso.work"]
     }
-  };
+  ];
 }
 
-test("runSearch returns evaluated catalog matches", async () => {
-  const bridge = createBridge();
-  const executor = new InlineExecutor();
-
-  const result = await runSearch(
-    bridge,
-    executor,
-    "async () => tools.filter((tool) => /project|work item|query/i.test(`${tool.name} ${tool.description}`)).map((tool) => tool.name)"
-  );
-
-  assert.equal(result.error, null);
-  assert.deepEqual(result.result, [
-    "core_list_projects",
-    "wit_get_query",
-    "search_workitem"
+test("selectLatestSpecFiles picks latest version per area", () => {
+  const files = selectLatestSpecFiles([
+    "specification/core/7.1/projects.json",
+    "specification/core/7.2/projects.json",
+    "specification/wit/7.0/workItemTracking.json",
+    "specification/wit/7.2/workItemTracking.json"
   ]);
-  assert.match(result.executeInput.code, /core_list_projects/);
-});
 
-test("runSearch can surface input and output schemas", async () => {
-  const bridge = createBridge();
-  const executor = new InlineExecutor();
-
-  const result = await runSearch(
-    bridge,
-    executor,
-    "async () => tools.filter((tool) => /project|query/i.test(`${tool.name} ${tool.description}`)).map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema ?? null }))"
-  );
-
-  assert.equal(result.error, null);
-  assert.deepEqual(result.result, [
+  assert.deepEqual(files, [
     {
-      name: "core_list_projects",
-      inputSchema: {},
-      outputSchema: { type: "array", items: { type: "object" } }
+      area: "core",
+      version: "7.2",
+      path: "specification/core/7.2/projects.json"
     },
     {
-      name: "wit_get_query",
-      inputSchema: {},
-      outputSchema: { type: "object", properties: { id: { type: "string" } } }
+      area: "wit",
+      version: "7.2",
+      path: "specification/wit/7.2/workItemTracking.json"
     }
   ]);
 });
 
-test("runExecute exposes only azdoCallTool helper", async () => {
-  const bridge = createBridge();
-  const executor: Executor = new InlineExecutor();
-  const codemode = createExecutionCodeTool(bridge, executor);
+test("extractOperationsFromSpec resolves request and response schemas", () => {
+  const operations = extractOperationsFromSpec("specification/core/7.2/projects.json", {
+    info: { version: "7.2-preview" },
+    host: "dev.azure.com",
+    basePath: "/",
+    parameters: {
+      apiVersion: {
+        name: "api-version",
+        in: "query",
+        default: "7.2-preview.1",
+        type: "string"
+      }
+    },
+    definitions: {
+      ProjectList: {
+        type: "object",
+        properties: {
+          items: { type: "array", items: { type: "object" } }
+        }
+      }
+    },
+    paths: {
+      "/{organization}/_apis/projects": {
+        get: {
+          operationId: "Projects_List",
+          description: "List projects",
+          parameters: [{ $ref: "#/parameters/apiVersion" }],
+          responses: {
+            "200": {
+              description: "ok",
+              schema: { $ref: "#/definitions/ProjectList" }
+            }
+          }
+        }
+      }
+    }
+  });
 
-  const success = await runExecute(
+  assert.equal(operations[0]?.operationId, "Projects_List");
+  assert.equal(operations[0]?.rawOperationId, "Projects_List");
+  assert.deepEqual(operations[0]?.responseSchema, {
+    type: "object",
+    properties: {
+      items: { type: "array", items: { type: "object" } }
+    }
+  });
+  assert.equal(operations[0]?.apiVersion, "7.2-preview.1");
+});
+
+test("search view hides organization and api-version from visible inputs", () => {
+  const searchOperation = toSearchOperation(createOperations()[1]!);
+
+  assert.equal(searchOperation.path, "/{project}/_apis/wit/wiql");
+  assert.deepEqual(searchOperation.implicitPathParams, ["organization"]);
+  assert.deepEqual(searchOperation.implicitQueryParams, ["api-version"]);
+  assert.deepEqual(
+    searchOperation.parameters.map((parameter) => parameter.name),
+    ["project"]
+  );
+});
+
+test("search view keeps schemas compact and omits head endpoints from catalog", async () => {
+  const operations = createOperations().concat({
+    ...createOperations()[1]!,
+    operationId: "Wiql_Get",
+    rawOperationId: "Wiql_Get",
+    method: "HEAD"
+  });
+  const caller = new FakeApiCaller(operations, async () => {
+    throw new Error("not used");
+  });
+
+  const searchOperations = await caller.listSearchOperations();
+  assert.equal(searchOperations.some((operation) => operation.method === "HEAD"), false);
+  assert.deepEqual(searchOperations[1]?.responseSchema, {
+    type: "object",
+    properties: { workItems: { type: "array" } }
+  });
+});
+
+test("runSearch returns evaluated operation matches", async () => {
+  const caller = new FakeApiCaller(createOperations(), async () => {
+    throw new Error("not used");
+  });
+
+  const result = await runSearch(
+    caller,
+    new InlineExecutor(),
+    "async (operations) => operations.filter((op) => /project|wiql/i.test(`${op.operationId} ${op.description}`)).map((op) => ({ operationId: op.operationId, method: op.method, responseSchema: op.responseSchema ?? null }))"
+  );
+
+  assert.equal(result.error, null);
+  assert.deepEqual(result.result, [
+    {
+      operationId: "Projects_List",
+      method: "GET",
+      responseSchema: { type: "object", properties: { items: { type: "array" } } }
+    },
+    {
+      operationId: "Wiql_Query_By_Wiql",
+      method: "POST",
+      responseSchema: { type: "object", properties: { workItems: { type: "array" } } }
+    }
+  ]);
+});
+
+test("runExecute chains on response data", async () => {
+  const operations = createOperations();
+  const caller = new FakeApiCaller(
+    operations,
+    async (input): Promise<AzureDevOpsApiResponse> => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      url: "https://dev.azure.com/example",
+      operationId: input.operationId,
+      headers: {},
+      data: {
+        operationId: input.operationId,
+        pathParams: input.pathParams ?? {},
+        body: input.body ?? null
+      },
+      text: JSON.stringify({ operationId: input.operationId })
+    })
+  );
+  const codemode = createExecutionCodeTool(caller, new InlineExecutor());
+
+  const result = await runExecute(
     codemode,
-    'async () => codemode.azdoCallTool({ tool: "core_list_projects", args: { top: 5 } })',
-    "test-success",
+    'async () => { const first = await codemode.azdoRequest({ operationId: "Projects_List", pathParams: {} }); return { first: first.data, second: await codemode.azdoRequest({ operationId: "Wiql_Query_By_Wiql", pathParams: { project: "sample" }, body: { query: "Select [System.Id] From WorkItems" } }).then((response) => response.data) }; }',
+    "test-call",
     "process"
   );
 
-  assert.deepEqual(success.result, {
-    toolName: "core_list_projects",
-    args: { top: 5 }
+  assert.deepEqual(result.result, {
+    first: {
+      operationId: "Projects_List",
+      pathParams: {},
+      body: null
+    },
+    second: {
+      operationId: "Wiql_Query_By_Wiql",
+      pathParams: { project: "sample" },
+      body: { query: "Select [System.Id] From WorkItems" }
+    }
   });
-
-  await assert.rejects(
-    () =>
-      runExecute(
-        codemode,
-        "async () => codemode.azdoListTools({})",
-        "test-failure",
-        "process"
-      ),
-    /codemode\.azdoListTools is not a function|Host function "azdoListTools" is not registered|Tool "azdoListTools" not found/
-  );
 });

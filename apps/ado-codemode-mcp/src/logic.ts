@@ -1,23 +1,23 @@
+import type { ExecuteResult, Executor } from "@cloudflare/codemode";
 import { createCodeTool } from "@cloudflare/codemode/ai";
 import { tool, type ToolExecutionOptions } from "ai";
 import { z } from "zod";
-import type { ExecuteResult, Executor } from "@cloudflare/codemode";
-import type { AzdoToolInfo } from "../../../packages/azdo-mcp-client/src/index.js";
+import type {
+  AzureDevOpsApiCaller,
+  AzureDevOpsApiOperation,
+  AzureDevOpsApiResponse,
+  AzureDevOpsSearchOperation
+} from "./catalog.js";
+import { toSearchOperation } from "./catalog.js";
 
 export interface CapabilitySummary {
   helperModules?: string[];
   hostFunctions?: Array<{ name: string; description: string }>;
   safetyRules: string[];
-  allowlist?: string[];
   executeInput: {
     code: string;
   };
   workflow?: string[];
-}
-
-export interface BridgeLike {
-  listTools(): Promise<AzdoToolInfo[]>;
-  callTool(toolName: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface SearchResponse {
@@ -25,7 +25,16 @@ export interface SearchResponse {
   error: string | null;
   logs: string[];
   code: string;
+  implicitContext?: {
+    organization: "server-bound";
+    apiVersion: "defaulted-per-operation";
+  };
   workflow?: string[] | undefined;
+  starterRecipes?: Array<{
+    name: string;
+    operations: string[];
+    notes: string;
+  }>;
   executeInput: {
     code: string;
   };
@@ -39,47 +48,95 @@ export interface ExecuteResponse {
 }
 
 export function buildCapabilitySummary(
-  allowedTools: AzdoToolInfo[],
-  options: {
-    includeAllowlist?: boolean;
-    includeHelpers?: boolean;
-  } = {}
+  operations: AzureDevOpsApiOperation[]
 ): CapabilitySummary {
-  const { includeAllowlist = false, includeHelpers = false } = options;
+  const exampleOperation =
+    operations.find((operation) => operation.operationId === "Projects_List")
+      ?.operationId ?? operations[0]?.operationId ?? "Projects_List";
 
-  const summary: CapabilitySummary = {
+  return {
     safetyRules: [
       "Generated code runs inside the sandbox executor, not in the trusted host process.",
-      "Azure DevOps credentials stay in the local bridge process started by the gateway.",
-      "The default container launch uses --network=none and runsc.",
-      "The callback channel is a bind-mounted per-run request/response directory."
+      "Azure DevOps credentials stay in the trusted host process.",
+      "Search works against a static Azure DevOps REST API catalog built from official Swagger specs.",
+      "Execute performs authenticated Azure DevOps REST requests through a single host helper.",
+      "The server already binds the Azure DevOps organization and default api-version handling."
     ],
     workflow: [
-      "Call MCP search first to inspect the Azure DevOps tool catalog and choose the few relevant tool names for the task.",
-      "Then call execute once with a single combined JavaScript program that uses only those relevant tool names.",
+      "Call MCP search once first to inspect the Azure DevOps REST API catalog and choose the relevant operationIds.",
+      "Then call execute once with a single combined JavaScript program that uses only those operationIds.",
       "Avoid splitting one task across many top-level execute invocations.",
-      "Inside that single execute call, use multiple Azure DevOps tool calls and do filtering, sorting, joins, and summarization in JavaScript."
+      "Inside the single execute call, chain requests through response.data and do filtering, joins, and summarization in JavaScript.",
+      "Do not inspect local config, environment variables, or CLI defaults; server-bound context is already applied."
     ],
     executeInput: {
-      code: 'async () => { return codemode.azdoCallTool({ tool: "core_list_projects", args: {} }); }'
-    }
-  };
-
-  if (includeHelpers) {
-    summary.helperModules = ["codemode.azdoCallTool"];
-    summary.hostFunctions = [
+      code: `async () => codemode.azdoRequest({ operationId: "${exampleOperation}", pathParams: {}, query: {} })`
+    },
+    helperModules: ["codemode.azdoRequest"],
+    hostFunctions: [
       {
-        name: "codemode.azdoCallTool({ tool, args })",
-        description: "Calls one Azure DevOps MCP tool by exact name through the trusted host bridge."
+        name: "codemode.azdoRequest({ operationId, pathParams, query, headers, body, apiVersion })",
+        description:
+          "Calls one Azure DevOps REST operation by operationId. The server already provides the organization and default api-version handling, so only pass the remaining path/query/body inputs for the chosen operation. Returns `{ ok, status, statusText, url, operationId, headers, data, text }`. Prefer `data` for chaining."
       }
-    ];
+    ]
+  };
+}
+
+function searchCatalogNote(operations: AzureDevOpsSearchOperation[]): string[] {
+  const projectList = operations.find(
+    (operation) => operation.operationId === "Projects_List"
+  );
+  const wiql = operations.find(
+    (operation) => operation.operationId === "Wiql_Query_By_Wiql"
+  );
+  const batch = operations.find(
+    (operation) => operation.operationId === "Work_Items_Get_Work_Items_Batch"
+  );
+
+  return [
+    "Search receives sanitized operations: organization and default api-version are already bound by the server and omitted from visible parameters.",
+    projectList
+      ? `For project discovery, start with ${projectList.operationId}.`
+      : "For project discovery, start with a project-list operation.",
+    wiql
+      ? `For work item querying, a WIQL operation such as ${wiql.operationId} is usually the direct path.`
+      : "For work item querying, a WIQL operation is usually the direct path.",
+    batch
+      ? `For enriching work item IDs into full details, use a batch get operation such as ${batch.operationId}.`
+      : "For enriching work item IDs into full details, use a batch get operation."
+  ];
+}
+
+function starterRecipes(operations: AzureDevOpsSearchOperation[]): Array<{
+  name: string;
+  operations: string[];
+  notes: string;
+}> {
+  const hasProjects = operations.some((operation) => operation.operationId === "Projects_List");
+  const hasWiql = operations.some(
+    (operation) => operation.operationId === "Wiql_Query_By_Wiql"
+  );
+  const hasBatch = operations.some(
+    (operation) => operation.operationId === "Work_Items_Get_Work_Items_Batch"
+  );
+
+  const recipes: Array<{ name: string; operations: string[]; notes: string }> = [];
+
+  if (hasProjects && hasWiql && hasBatch) {
+    recipes.push({
+      name: "Recent work items by project and type",
+      operations: [
+        "Projects_List",
+        "Wiql_Query_By_Wiql",
+        "Work_Items_Get_Work_Items_Batch"
+      ],
+      notes:
+        "Use Projects_List to choose the project, Wiql_Query_By_Wiql to fetch the newest matching work item IDs ordered by ChangedDate, then Work_Items_Get_Work_Items_Batch to retrieve the display fields."
+    });
   }
 
-  if (includeAllowlist) {
-    summary.allowlist = allowedTools.map((toolInfo) => toolInfo.name);
-  }
-
-  return summary;
+  return recipes;
 }
 
 export async function resolveToolExecution<T>(
@@ -106,61 +163,78 @@ export async function resolveToolExecution<T>(
   return (await value) as T;
 }
 
-export function createExecutionCodeTool(bridge: BridgeLike, executor: Executor) {
+export function createExecutionCodeTool(
+  caller: AzureDevOpsApiCaller,
+  executor: Executor
+) {
   return createCodeTool({
     tools: {
-      azdoCallTool: tool({
+      azdoRequest: tool({
         description:
-          "Call one Azure DevOps MCP tool by exact tool name. Returns `{ isError, text, structuredContent, data, content }`, where `data` is normalized structured JSON when available and should be preferred for chaining multiple tool calls.",
+          "Call one Azure DevOps REST operation by exact operationId. The server already binds organization and auth, so pass only the remaining path/query/body inputs. Returns `{ ok, status, statusText, url, operationId, headers, data, text }`; prefer `data` for chaining.",
         inputSchema: z.object({
-          tool: z.string().describe("Exact Azure DevOps MCP tool name from the allowlist."),
-          args: z.record(z.string(), z.unknown()).default({})
+          operationId: z.string().describe("Exact Azure DevOps REST operationId chosen from MCP search."),
+          pathParams: z
+            .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+            .default({})
+            .describe("Only the non-server-bound path params for the chosen operation. Do not include organization."),
+          query: z
+            .record(z.string(), z.unknown())
+            .default({})
+            .describe("Query parameters for the chosen operation, excluding the default api-version unless you intentionally need to override it."),
+          headers: z.record(z.string(), z.string()).default({}),
+          body: z.unknown().optional(),
+          apiVersion: z.string().optional()
         }),
-        execute: async ({ tool: toolName, args }) => bridge.callTool(toolName, args)
+        execute: async (input) => caller.callOperation(input)
       })
     },
     executor,
     description: [
-      "Execute JavaScript code through @cloudflare/codemode.",
-      "Before execute, call the MCP search tool to inspect the Azure DevOps tool catalog and identify the few relevant tool names for the task.",
-      "Do not try to discover tool names inside execute. Search is the discovery step; execute is the action/orchestration step.",
+      "Run JavaScript to orchestrate Azure DevOps REST API operations.",
+      "Before execute, call the MCP search tool to inspect the Azure DevOps REST API catalog and identify the few relevant operationIds for the task.",
+      "Do not try to rediscover the API surface inside execute. Search is the discovery step; execute is the orchestration step.",
       "Available helpers:",
       "{{types}}",
       "Pass an async arrow function in JavaScript.",
-      "Use only codemode.azdoCallTool({ tool, args }).",
-      "Each Azure DevOps tool call returns `{ isError, text, structuredContent, data, content }`. Prefer `response.data`, then `response.structuredContent`, and only fall back to parsing `response.text` when needed.",
-      "For tasks that need several Azure DevOps reads, combine them into one program and make multiple helper calls inside that single async function.",
+      "Use only codemode.azdoRequest({ operationId, pathParams, query, headers, body, apiVersion }).",
+      "Each request returns `{ ok, status, statusText, url, operationId, headers, data, text }`. Prefer `response.data`, and only fall back to `response.text` if the endpoint is not JSON.",
+      "For tasks that need several Azure DevOps reads or writes, combine them into one program and chain data from earlier calls into later ones.",
       "Prefer one top-level execute call per user task. Do not break a single task into many execute calls unless you need a checkpoint or hit output limits.",
-      "Within that one execute call, you may call several Azure DevOps tools and do filtering, sorting, joins, and summarization in JavaScript.",
-      "Avoid splitting one task across multiple top-level execute invocations unless the result would exceed sandbox limits or you need a checkpoint between steps.",
-      "Do lightweight filtering, aggregation, and formatting inside the single program instead of returning raw payloads from many separate execute calls.",
-      "Do not attempt network access, shelling out, or arbitrary filesystem access.",
+      "Do lightweight filtering, aggregation, and formatting inside that one program instead of returning raw payloads from many separate execute calls.",
+      "Do not attempt network access outside the provided Azure DevOps request helper, shelling out, or arbitrary filesystem access.",
       "Return concise JSON-friendly data from the function."
     ].join("\n\n")
   });
 }
 
 export async function runSearch(
-  bridge: BridgeLike,
+  caller: AzureDevOpsApiCaller,
   executor: Executor,
   code: string
 ): Promise<SearchResponse> {
-  const allowedTools = await bridge.listTools();
-  const wrappedCode = `async () => { const tools = await codemode.getTools({}); return await (${code})(tools); }`;
+  const operations = await caller.listOperations();
+  const searchOperations = await caller.listSearchOperations();
+  const wrappedCode = `async () => { const operations = await codemode.getOperations({}); return await (${code})(operations); }`;
   const searchResult = await resolveToolExecution(
     executor.execute(wrappedCode, {
-      getTools: async () => allowedTools
+      getOperations: async () => searchOperations
     })
   );
 
-  const summary = buildCapabilitySummary(allowedTools, { includeHelpers: true });
+  const summary = buildCapabilitySummary(operations);
 
   return {
     result: searchResult.result,
     error: searchResult.error ?? null,
     logs: searchResult.logs ?? [],
     code,
-    workflow: summary.workflow,
+    implicitContext: {
+      organization: "server-bound",
+      apiVersion: "defaulted-per-operation"
+    },
+    workflow: [...(summary.workflow ?? []), ...searchCatalogNote(searchOperations)],
+    starterRecipes: starterRecipes(searchOperations),
     executeInput: summary.executeInput
   };
 }
@@ -214,5 +288,40 @@ export class InlineExecutor implements Executor {
         logs: []
       };
     }
+  }
+}
+
+export class FakeApiCaller implements AzureDevOpsApiCaller {
+  constructor(
+    private readonly operations: AzureDevOpsApiOperation[],
+    private readonly responseFactory: (input: {
+      operationId: string;
+      pathParams?: Record<string, string | number | boolean>;
+      query?: Record<string, unknown>;
+      headers?: Record<string, string>;
+      body?: unknown;
+      apiVersion?: string;
+    }) => Promise<AzureDevOpsApiResponse>
+  ) {}
+
+  async listOperations(): Promise<AzureDevOpsApiOperation[]> {
+    return this.operations;
+  }
+
+  async listSearchOperations(): Promise<AzureDevOpsSearchOperation[]> {
+    return this.operations
+      .filter((operation) => operation.method !== "HEAD" && operation.method !== "OPTIONS")
+      .map((operation) => toSearchOperation(operation));
+  }
+
+  async callOperation(input: {
+    operationId: string;
+    pathParams?: Record<string, string | number | boolean>;
+    query?: Record<string, unknown>;
+    headers?: Record<string, string>;
+    body?: unknown;
+    apiVersion?: string;
+  }): Promise<AzureDevOpsApiResponse> {
+    return this.responseFactory(input);
   }
 }
