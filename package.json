@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "dev:ado-codemode-mcp": "tsx apps/ado-codemode-mcp/src/index.ts",
+    "slides:dev": "slidev slides/slides.md",
+    "slides:build": "slidev build slides/slides.md --out slides/dist",
     "test:ado-codemode-mcp": "node --test --import tsx apps/ado-codemode-mcp/src/logic.test.ts apps/ado-codemode-mcp/src/auth.test.ts packages/sandbox-executor/src/GvisorContainerExecutor.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -20,7 +22,16 @@
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@iconify-json/carbon": "^1.2.19",
+    "@iconify-json/logos": "^1.2.10",
+    "@iconify-json/mdi": "^1.2.3",
+    "@slidev/cli": "^52.14.1",
+    "@slidev/theme-apple-basic": "^0.25.1",
+    "@slidev/theme-default": "^0.25.0",
+    "@slidev/theme-seriph": "^0.25.0",
     "@types/node": "^24.3.0",
+    "mermaid": "^11.13.0",
+    "playwright-chromium": "^1.58.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
