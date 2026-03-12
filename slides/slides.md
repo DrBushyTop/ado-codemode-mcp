@@ -44,15 +44,15 @@ class: text-center
   </div>
 
   <p v-click>
-    This session is a practical case study on testing Cloudflare's Code Mode approach against Azure DevOps MCP.
+    A practical case study: Cloudflare Code Mode against Azure DevOps MCP.
   </p>
 
   <p v-click>
-    Code Mode's promise is simple and very appealing: instead of making the model pick one tool call at a time, let it write a small program that discovers the right surface, chains the calls itself, and returns only the useful result.
+    The promise: search the surface, write one small program, return one useful result.
   </p>
 
   <p v-click>
-    I will show the first implementation, the issues I hit, and why I ended up switching to a direct Azure DevOps REST contract built from the public Swagger specs instead of wrapping current MCP servers.
+    I will show why wrapping MCP was not enough, and why a direct REST contract worked better.
   </p>
 </div>
 
@@ -94,9 +94,7 @@ This is the emotional setup slide. Azure DevOps looked like a perfect candidate.
 layout: center
 ---
 
-# Level 100 first
-
-## Why MCP starts to hurt, and why these newer patterns exist
+# Why MCP hurts
 
 ---
 layout: two-cols
@@ -141,63 +139,102 @@ layout: center
 class: text-center
 ---
 
-# The industry response has been pretty consistent
+# The response pattern
 
 <div class="mt-10 grid grid-cols-3 gap-6 max-w-6xl mx-auto text-left">
   <div v-click class="rounded-2xl bg-white/6 p-6">
     <div class="text-sm uppercase tracking-wide opacity-60">Step 1</div>
     <div class="text-2xl font-semibold mt-2">Skills</div>
-    <div class="mt-3 opacity-80">Load less upfront. Try to route the model toward the right area first.</div>
+    <div class="mt-3 opacity-80">Load less upfront.</div>
   </div>
   <div v-click class="rounded-2xl bg-white/6 p-6">
     <div class="text-sm uppercase tracking-wide opacity-60">Step 2</div>
     <div class="text-2xl font-semibold mt-2">Tool search</div>
-    <div class="mt-3 opacity-80">Search the tool surface dynamically instead of dumping every definition into context.</div>
+    <div class="mt-3 opacity-80">Discover tools dynamically.</div>
   </div>
   <div v-click class="rounded-2xl bg-white/6 p-6">
     <div class="text-sm uppercase tracking-wide opacity-60">Step 3</div>
     <div class="text-2xl font-semibold mt-2">Programmatic calls</div>
-    <div class="mt-3 opacity-80">Let code orchestrate the calls instead of making the model think between each one.</div>
+    <div class="mt-3 opacity-80">Let code do the orchestration.</div>
   </div>
 </div>
 
 <div v-click="4" class="mt-12 text-lg opacity-80 max-w-4xl mx-auto no-ghost">
-I don't think these are random separate features. I think they are all converging on the same realization:
+These are all converging on the same realization:
 <span class="text-cyan-300 font-semibold">large tool surfaces need dynamic discovery and code-based orchestration.</span>
 </div>
 
 ---
 layout: default
+clicks: 5
 ---
+# Same pressure, different product shapes
 
-# Same idea, different vendors
-
-<div class="grid grid-cols-2 gap-8 mt-6 text-lg">
+<div class="grid grid-cols-2 gap-6 mt-8 text-lg max-w-6xl mx-auto">
   <div v-click class="rounded-2xl bg-white/6 p-6">
-    <div class="font-semibold mb-3">Cloudflare</div>
-    <ul class="space-y-2 opacity-85">
-      <li>Code Mode</li>
-      <li>model writes a small program</li>
-      <li>program orchestrates the tool calls</li>
-    </ul>
+    <div class="flex items-center gap-3 mb-3">
+      <img src="https://cdn.simpleicons.org/cloudflare/F38020" alt="Cloudflare logo" class="w-7 h-7">
+      <div class="font-semibold text-xl">Cloudflare</div>
+    </div>
+    <div class="space-y-2 opacity-85">
+      <div><span class="font-semibold opacity-95">Pattern:</span> Code Mode</div>
+      <div><span class="font-semibold opacity-95">Move:</span> one typed code surface</div>
+      <div><span class="font-semibold opacity-95">Runtime:</span> isolated Worker sandbox</div>
+    </div>
   </div>
   <div v-click class="rounded-2xl bg-white/6 p-6">
-    <div class="font-semibold mb-3">OpenAI / Anthropic</div>
-    <ul class="space-y-2 opacity-85">
-      <li>tool search</li>
-      <li>programmatic tool calling</li>
-      <li>same basic pressure, different product shape</li>
-    </ul>
+    <div class="flex items-center gap-3 mb-3">
+      <img src="https://cdn.simpleicons.org/anthropic/191919" alt="Anthropic logo" class="w-7 h-7">
+      <div class="font-semibold text-xl">Anthropic</div>
+    </div>
+    <div class="space-y-2 opacity-85">
+      <div><span class="font-semibold opacity-95">Discovery:</span> tool search</div>
+      <div><span class="font-semibold opacity-95">Execution:</span> programmatic tool calling</div>
+      <div><span class="font-semibold opacity-95">Runtime:</span> code execution container</div>
+    </div>
+  </div>
+  <div v-click class="rounded-2xl bg-white/6 p-6">
+    <div class="flex items-center gap-3 mb-3">
+      <img src="https://openai.com/favicon.ico" alt="OpenAI logo" class="w-7 h-7 rounded-sm">
+      <div class="font-semibold text-xl">OpenAI</div>
+    </div>
+    <div class="space-y-2 opacity-85">
+      <div><span class="font-semibold opacity-95">Discovery:</span> tool search</div>
+      <div><span class="font-semibold opacity-95">Surface:</span> deferred namespaces / MCP</div>
+      <div><span class="font-semibold opacity-95">Goal:</span> load less upfront</div>
+    </div>
+  </div>
+  <div v-click class="rounded-2xl bg-white/6 p-6">
+    <div class="flex items-center gap-3 mb-3">
+      <img src="https://cdn.simpleicons.org/google/4285F4" alt="Google logo" class="w-7 h-7">
+      <div class="font-semibold text-xl">Google</div>
+    </div>
+    <div class="space-y-2 opacity-85">
+      <div><span class="font-semibold opacity-95">Calling:</span> compositional function calling</div>
+      <div><span class="font-semibold opacity-95">Runtime:</span> built-in code execution</div>
+      <div><span class="font-semibold opacity-95">Direction:</span> more work inside one turn</div>
+    </div>
   </div>
 </div>
+
+<div v-click="5" class="mt-8 text-base opacity-70 max-w-5xl mx-auto no-ghost">
+  Not the same APIs, but the direction is familiar: shrink the upfront tool surface and let code handle more of the workflow.
+</div>
+
+<!--
+Source trail:
+- Cloudflare Codemode docs
+- Anthropic tool search + programmatic tool calling docs
+- OpenAI tool search docs
+- Google Gemini function calling docs (including compositional function calling)
+Apple CodeAct is the research ancestor worth naming out loud if helpful.
+-->
 
 ---
 layout: center
 ---
 
-# What Code Mode actually is
-
-## In the simplest form
+# Code Mode
 
 ---
 layout: default
@@ -267,10 +304,9 @@ class: text-center
 
 <v-clicks>
 
-- You give the model a typed tool surface.
-- Instead of forcing one tool call at a time, it writes a small async function.
-- That function does the orchestration.
-- The model gets one useful result back instead of every intermediate step.
+- typed tool surface
+- one bounded async function
+- one useful result back
 
 
 </v-clicks>
@@ -283,14 +319,14 @@ layout: center
 class: text-center
 ---
 
-# Why this looked almost perfect for Azure DevOps
+# Why Azure DevOps fit
 
 <div class="mt-8 text-2xl opacity-90 max-w-5xl mx-auto">
 Big tool surface. Lots of adjacent tools. Real multi-step workflows.
 </div>
 
 <div class="mt-12 text-xl opacity-80 max-w-4xl mx-auto">
-In other words: exactly the kind of thing where plain tool calling starts to feel expensive and brittle.
+Exactly where plain tool calling starts to feel brittle.
 </div>
 
 ---
@@ -299,7 +335,7 @@ layout: center
 
 # First attempt
 
-## Wrap the Azure DevOps MCP server and put `search` + `execute` in front of it
+## Wrap MCP
 
 ---
 layout: center
@@ -329,11 +365,10 @@ layout: two-cols
 
 <v-clicks>
 
-- The basic wrapper part was easy.
-- Good model behavior was not.
-- The model could often discover and call tools.
-- But it could not reliably reason about what came back.
-- That made longer chains inside one execute call shaky.
+- Wrapping MCP was easy.
+- Reliable behavior was not.
+- The model could call tools.
+- It could not reliably reason about the outputs.
 
 </v-clicks>
 
@@ -357,10 +392,10 @@ layout: center
 class: text-center
 ---
 
-# The real problem was not “MCP bad”
+# Why it failed
 
 <div class="max-w-5xl mx-auto mt-8 text-2xl leading-snug opacity-90">
-The problem was that wrapping the MCP surface did not give the model a good enough contract.
+The wrapped MCP surface was not a strong enough contract.
 </div>
 
 <div class="grid grid-cols-2 gap-8 mt-12 text-left text-lg max-w-5xl mx-auto">
@@ -386,9 +421,7 @@ The problem was that wrapping the MCP surface did not give the model a good enou
 layout: center
 ---
 
-# Security matters too
-
-## Because the model is literally writing code now
+# Security
 
 ---
 layout: two-cols
@@ -420,15 +453,14 @@ layout: two-cols
 layout: quote
 ---
 
-> Plenty of people are already effectively YOLO-running model-written code in coding agents anyway. So the secure execution story matters, but it is also one of the biggest places where people can get themselves into trouble without fully realizing it.
+> People are already YOLO-running model-written code.<br><br>
+> The execution boundary is where that gets dangerous fast.
 
 ---
 layout: center
 ---
 
-# The turn in the story
-
-## I stopped wrapping MCP and went one layer lower
+# The pivot
 
 ---
 layout: default
@@ -441,7 +473,7 @@ layout: default
 - Microsoft publishes the Azure DevOps REST specs in `MicrosoftDocs/vsts-rest-api-specs`.
 - They are split by area and version, not one giant file.
 - But they are good enough to build a static operation catalog from.
-- That let me switch from wrapped MCP tools to a direct REST contract.
+- That was enough to switch from wrapped MCP tools to a direct REST contract.
 
 </v-clicks>
 
@@ -519,17 +551,11 @@ layout: quote
 
 > Code Mode is at its best when the model can plan data flow, not just function calls.
 
-<div class="mt-8 text-lg opacity-85">
-<span v-click>This was the lesson that changed the whole implementation.</span>
-</div>
-
 ---
 layout: center
 ---
 
-# Demo time
-
-## First the bad version, then the final one
+# Demo
 
 ---
 layout: two-cols
@@ -590,7 +616,7 @@ class: text-center
 
 <div class="grid grid-cols-2 gap-8 mt-10 text-left text-lg max-w-6xl mx-auto">
   <div v-click class="rounded-2xl bg-white/6 p-6">
-    <div class="font-semibold mb-2">What I still believe</div>
+    <div class="font-semibold mb-2">Still true</div>
     <ul class="space-y-2 opacity-85">
       <li>Code Mode is a good idea.</li>
       <li>These patterns are clearly where the ecosystem is moving.</li>
@@ -598,11 +624,12 @@ class: text-center
     </ul>
   </div>
   <div v-click class="rounded-2xl bg-white/6 p-6">
-    <div class="font-semibold mb-2">What changed for me</div>
+    <div class="font-semibold mb-2">What changed</div>
     <ul class="space-y-2 opacity-85">
       <li>Wrapping MCP is not automatically enough.</li>
       <li>Output schemas matter almost as much as input schemas.</li>
-      <li>The underlying contract quality matters more than I first expected.</li>
+      <li>A strong contract beats prompt tricks.</li>
+      <li>Prompts should not describe the underlying tools, rather how to use them effectively.</li>
     </ul>
   </div>
 </div>
@@ -611,27 +638,7 @@ class: text-center
 layout: quote
 ---
 
-> My conclusion is not that Code Mode is overhyped. Quite the opposite. My conclusion is that it becomes much more real once the underlying tool contract is rich enough that the model can actually plan data flow instead of just function calls.
-
----
-layout: center
----
-
-# Practical takeaways
-
-<div class="max-w-5xl mx-auto text-left">
-
-<v-clicks>
-
-- If you have a large tool surface, these patterns are absolutely worth looking at.
-- Wrapping an MCP server is not automatically enough.
-- If the model cannot see reliable outputs, churn shows up very quickly.
-- If you can access a strong REST/OpenAPI contract directly, that may be the better abstraction.
-- Generic guidance plus a clean surface worked better than task-specific prompt recipes.
-
-</v-clicks>
-
-</div>
+> Code Mode gets real when the model can plan data flow, not just function calls.
 
 ---
 layout: center
