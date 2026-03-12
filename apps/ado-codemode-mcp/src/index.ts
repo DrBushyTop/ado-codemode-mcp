@@ -35,6 +35,28 @@ function contentText(payload: unknown): { content: Array<{ type: "text"; text: s
   };
 }
 
+const searchOutputSchema = z.object({
+  result: z.unknown(),
+  error: z.string().nullable(),
+  logs: z.array(z.string()),
+  code: z.string(),
+  implicitContext: z
+    .object({
+      organization: z.literal("server-bound"),
+      apiVersion: z.literal("defaulted-per-operation")
+    })
+    .optional(),
+  workflow: z.array(z.string()).optional(),
+  executeInput: z.object({
+    code: z.string()
+  })
+});
+
+const executeOutputSchema = z.object({
+  result: z.unknown(),
+  logs: z.array(z.string())
+});
+
 const config = readAzureDevOpsDirectConfig();
 const authProvider = createAzureDevOpsAuthProvider(config);
 const catalog = new AzureDevOpsRestCatalog({
@@ -85,17 +107,24 @@ server.registerTool(
   "search",
   {
     description:
-      "Search the Azure DevOps REST API catalog. Call this once first to narrow the exact operationIds you need before execute. The catalog already omits server-bound context like organization and default api-version handling, so focus only on the remaining parameters you need to supply. Return a compact result that includes `operationId`, `method`, `path`, `summary`, `description`, `parameters`, `bodyRequired`, `bodySchema`, `responseSchema`, and `defaultApiVersion` when available. Prefer one focused search; do not keep searching once you already have a viable project-list + work-item-query + batch-details path.",
+      "Search the Azure DevOps REST API catalog before execute. Pass a JavaScript async arrow function that receives sanitized `operations` metadata and returns the smallest useful subset for the task. The tool returns a structured envelope with your `result` plus server guidance in `implicitContext`, `workflow`, and `executeInput`.",
     inputSchema: {
       code: z
         .string()
         .min(1)
         .describe(
-          "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary. Prefer one focused search that returns a compact array of `{ operationId, method, path, summary, description, parameters, bodyRequired, bodySchema, responseSchema, defaultApiVersion }`. Do not search repeatedly once you already have a viable project-list + team-list + work-item-query + batch-details path. Example: async (operations) => operations.filter((op) => /projects_list|categorized_teams_get|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, summary: op.summary, parameters: op.parameters, bodyRequired: op.bodyRequired, bodySchema: op.bodySchema ?? null, responseSchema: op.responseSchema ?? null, defaultApiVersion: op.defaultApiVersion }))"
+          "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary as `result`. Prefer one focused search that projects only the fields you need, such as `{ operationId, method, path, summary, description, parameters, bodyRequired, bodySchema, responseSchema, defaultApiVersion }`. The server will wrap that `result` together with `error`, `logs`, `implicitContext`, `workflow`, and `executeInput`. Example: async (operations) => operations.filter((op) => /projects_list|categorized_teams_get|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, summary: op.summary, parameters: op.parameters, bodyRequired: op.bodyRequired, bodySchema: op.bodySchema ?? null, responseSchema: op.responseSchema ?? null, defaultApiVersion: op.defaultApiVersion }))"
         )
-    }
+    },
+    outputSchema: searchOutputSchema
   },
-  async ({ code }) => contentText(await runSearch(catalog, executor, code))
+  async ({ code }) => {
+    const result = await runSearch(catalog, executor, code);
+    return {
+      structuredContent: result as unknown as Record<string, unknown>,
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+    };
+  }
 );
 
 if (exposeDebugTools) {
@@ -161,18 +190,20 @@ server.registerTool(
         .describe(
           "JavaScript async arrow function to execute. Prefer a single program that calls only the relevant Azure DevOps operationIds selected from MCP search, performs filtering/aggregation inside that one program, and chains on `response.data` from previous calls. Do not pass `organization`; the server already binds it for every request. Do not probe globals or use raw `fetch`; use only `codemode.azdoRequest(...)`."
         )
-    }
+    },
+    outputSchema: executeOutputSchema
   },
   async ({ code }) => {
     executeSequence += 1;
-    return contentText(
-      await runExecute(
-        codemode,
-        code,
-        `ado-codemode-mcp-execute-${String(executeSequence)}`,
-        process.env.CODEMODE_SANDBOX_ENGINE ?? "podman"
-      )
+    const result = await runExecute(
+      codemode,
+      code,
+      `ado-codemode-mcp-execute-${String(executeSequence)}`
     );
+    return {
+      structuredContent: result as unknown as Record<string, unknown>,
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+    };
   }
 );
 

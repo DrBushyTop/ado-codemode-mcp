@@ -38,8 +38,6 @@ export interface SearchResponse {
 export interface ExecuteResponse {
   result: unknown;
   logs: string[];
-  code: string;
-  sandboxEngine: string;
 }
 
 export function buildCapabilitySummary(
@@ -205,8 +203,7 @@ export async function runSearch(
 export async function runExecute(
   codemode: ReturnType<typeof createExecutionCodeTool>,
   code: string,
-  toolCallId: string,
-  sandboxEngine: string
+  toolCallId: string
 ): Promise<ExecuteResponse> {
   if (!codemode.execute) {
     throw new Error("Code Mode execute handler is not available.");
@@ -222,9 +219,7 @@ export async function runExecute(
 
   return {
     result: result.result,
-    logs: result.logs ?? [],
-    code: result.code,
-    sandboxEngine
+    logs: result.logs ?? []
   };
 }
 

@@ -323,8 +323,7 @@ test("runExecute chains on response data", async () => {
   const result = await runExecute(
     codemode,
     'async () => { const first = await codemode.azdoRequest({ operationId: "Projects_List", pathParams: {} }); return { first: first.data, second: await codemode.azdoRequest({ operationId: "Wiql_Query_By_Wiql", pathParams: { project: "sample" }, body: { query: "Select [System.Id] From WorkItems" } }).then((response) => response.data) }; }',
-    "test-call",
-    "process"
+    "test-call"
   );
 
   assert.deepEqual(result.result, {
@@ -339,4 +338,5 @@ test("runExecute chains on response data", async () => {
       body: { query: "Select [System.Id] From WorkItems" }
     }
   });
+  assert.deepEqual(result.logs, []);
 });
