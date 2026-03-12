@@ -172,12 +172,25 @@ test("search view hides organization and api-version from visible inputs", () =>
   const searchOperation = toSearchOperation(createOperations()[1]!);
 
   assert.equal(searchOperation.path, "/{project}/_apis/wit/wiql");
+  assert.equal(searchOperation.summary, "Run WIQL");
+  assert.equal(searchOperation.area, "wit");
+  assert.equal(searchOperation.preview, false);
   assert.deepEqual(searchOperation.implicitPathParams, ["organization"]);
   assert.deepEqual(searchOperation.implicitQueryParams, ["api-version"]);
   assert.deepEqual(
     searchOperation.parameters.map((parameter) => parameter.name),
     ["project"]
   );
+  assert.equal(searchOperation.bodyRequired, true);
+  assert.equal(searchOperation.bodyDescription, "WIQL body");
+  assert.deepEqual(searchOperation.bodySchema, {
+    type: "object",
+    properties: { query: { type: "string" } }
+  });
+  assert.equal(searchOperation.responseDescription, "Query results");
+  assert.deepEqual(searchOperation.consumes, ["application/json"]);
+  assert.deepEqual(searchOperation.produces, ["application/json"]);
+  assert.equal(searchOperation.specVersion, "7.2-preview");
 });
 
 test("search view keeps schemas compact and omits head endpoints from catalog", async () => {
@@ -199,6 +212,63 @@ test("search view keeps schemas compact and omits head endpoints from catalog", 
   });
 });
 
+test("search view preserves required fields in summarized schemas", () => {
+  const operation = toSearchOperation({
+    ...createOperations()[1]!,
+    requestBody: {
+      name: "body",
+      in: "body",
+      description: "WIQL body",
+      required: true,
+      schema: {
+        type: "object",
+        required: ["query"],
+        properties: {
+          query: { type: "string", description: "The query" },
+          top: { type: "integer", default: 10 }
+        }
+      }
+    },
+    responseSchema: {
+      type: "object",
+      required: ["workItems"],
+      properties: {
+        workItems: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["id"],
+            properties: { id: { type: "integer" } }
+          }
+        }
+      }
+    }
+  });
+
+  assert.deepEqual(operation.bodySchema, {
+    type: "object",
+    required: ["query"],
+    properties: {
+      query: { type: "string", description: "The query" },
+      top: { type: "integer", default: 10 }
+    }
+  });
+  assert.deepEqual(operation.responseSchema, {
+    type: "object",
+    required: ["workItems"],
+    properties: {
+      workItems: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "integer" } }
+        }
+      }
+    }
+  });
+});
+
 test("runSearch returns evaluated operation matches", async () => {
   const caller = new FakeApiCaller(createOperations(), async () => {
     throw new Error("not used");
@@ -207,7 +277,7 @@ test("runSearch returns evaluated operation matches", async () => {
   const result = await runSearch(
     caller,
     new InlineExecutor(),
-    "async (operations) => operations.filter((op) => /project|wiql/i.test(`${op.operationId} ${op.description}`)).map((op) => ({ operationId: op.operationId, method: op.method, responseSchema: op.responseSchema ?? null }))"
+    "async (operations) => operations.filter((op) => /project|wiql/i.test(`${op.operationId} ${op.description}`)).map((op) => ({ operationId: op.operationId, method: op.method, bodyRequired: op.bodyRequired, bodySchema: op.bodySchema ?? null, responseSchema: op.responseSchema ?? null }))"
   );
 
   assert.equal(result.error, null);
@@ -215,11 +285,15 @@ test("runSearch returns evaluated operation matches", async () => {
     {
       operationId: "Projects_List",
       method: "GET",
+      bodyRequired: false,
+      bodySchema: null,
       responseSchema: { type: "object", properties: { items: { type: "array" } } }
     },
     {
       operationId: "Wiql_Query_By_Wiql",
       method: "POST",
+      bodyRequired: true,
+      bodySchema: { type: "object", properties: { query: { type: "string" } } },
       responseSchema: { type: "object", properties: { workItems: { type: "array" } } }
     }
   ]);

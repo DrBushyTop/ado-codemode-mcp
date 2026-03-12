@@ -81,25 +81,30 @@ const server = new McpServer({
   version: "0.2.0"
 });
 
-server.tool(
+server.registerTool(
   "search",
-  "Search the Azure DevOps REST API catalog. Call this once first to narrow the exact operationIds you need before execute. The catalog already omits server-bound context like organization and default api-version handling, so focus only on the remaining parameters you need to supply. Return a compact result that includes `operationId`, `method`, `path`, `description`, `parameters`, `requestBody`, and `responseSchema` when available. Prefer one focused search; do not keep searching once you have a viable project-list + work-item-query + batch-details path.",
   {
-    code: z
-      .string()
-      .min(1)
-      .describe(
-        "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary. Prefer one focused search that returns a compact array of `{ operationId, method, path, description, parameters, requestBody, responseSchema }`. Do not search repeatedly once you already have a viable project-list + team-list + work-item-query + batch-details path. Example: async (operations) => operations.filter((op) => /projects_list|categorized_teams_get|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, description: op.description, parameters: op.parameters, requestBody: op.requestBody ?? null, responseSchema: op.responseSchema ?? null }))"
-      )
+    description:
+      "Search the Azure DevOps REST API catalog. Call this once first to narrow the exact operationIds you need before execute. The catalog already omits server-bound context like organization and default api-version handling, so focus only on the remaining parameters you need to supply. Return a compact result that includes `operationId`, `method`, `path`, `summary`, `description`, `parameters`, `bodyRequired`, `bodySchema`, `responseSchema`, and `defaultApiVersion` when available. Prefer one focused search; do not keep searching once you already have a viable project-list + work-item-query + batch-details path.",
+    inputSchema: {
+      code: z
+        .string()
+        .min(1)
+        .describe(
+          "JavaScript async arrow function that receives the static Azure DevOps REST operation catalog as `operations` and returns the relevant subset or summary. Prefer one focused search that returns a compact array of `{ operationId, method, path, summary, description, parameters, bodyRequired, bodySchema, responseSchema, defaultApiVersion }`. Do not search repeatedly once you already have a viable project-list + team-list + work-item-query + batch-details path. Example: async (operations) => operations.filter((op) => /projects_list|categorized_teams_get|wiql_query_by_wiql|work_items_get_work_items_batch/i.test(op.operationId)).map((op) => ({ operationId: op.operationId, method: op.method, path: op.path, summary: op.summary, parameters: op.parameters, bodyRequired: op.bodyRequired, bodySchema: op.bodySchema ?? null, responseSchema: op.responseSchema ?? null, defaultApiVersion: op.defaultApiVersion }))"
+        )
+    }
   },
   async ({ code }) => contentText(await runSearch(catalog, executor, code))
 );
 
 if (exposeDebugTools) {
-  server.tool(
+  server.registerTool(
     "list_capabilities",
-    "Describe the helper APIs, safety rules, and loaded Azure DevOps REST API catalog.",
-    {},
+    {
+      description: "Describe the helper APIs, safety rules, and loaded Azure DevOps REST API catalog.",
+      inputSchema: {}
+    },
     async () => {
       const operations = await catalog.listOperations();
       return contentText({
@@ -110,10 +115,12 @@ if (exposeDebugTools) {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "health",
-    "Return Azure DevOps direct client and sandbox configuration health.",
-    {},
+    {
+      description: "Return Azure DevOps direct client and sandbox configuration health.",
+      inputSchema: {}
+    },
     async () => {
       const operations = await catalog.listOperations();
       return contentText({
@@ -142,16 +149,19 @@ if (exposeDebugTools) {
   );
 }
 
-server.tool(
+server.registerTool(
   "execute",
-  "Run a JavaScript program that calls Azure DevOps REST operations. First call MCP search to find the relevant operationIds, then use one combined execute program for the task instead of many small execute calls. Search is for API discovery; execute is for calling the chosen operations and orchestrating them in one program. The server already supplies organization and auth context, so do not inspect CLI defaults, local config, or environment variables. If the chosen operation path does not work, stop and report the blocker instead of falling back to other systems.",
   {
-    code: z
-      .string()
-      .min(1)
-      .describe(
-        "JavaScript async arrow function to execute. Prefer a single program that calls only the relevant Azure DevOps operationIds selected from MCP search, performs filtering/aggregation inside that one program, and chains on `response.data` from previous calls. Do not pass `organization`; the server already binds it for every request. Do not probe globals or use raw `fetch`; use only `codemode.azdoRequest(...)`."
-      )
+    description:
+      "Run a JavaScript program that calls Azure DevOps REST operations. First call MCP search to find the relevant operationIds, then use one combined execute program for the task instead of many small execute calls. Search is for API discovery; execute is for calling the chosen operations and orchestrating them in one program. The server already supplies organization and auth context, so do not inspect CLI defaults, local config, or environment variables. If the chosen operation path does not work, stop and report the blocker instead of falling back to other systems.",
+    inputSchema: {
+      code: z
+        .string()
+        .min(1)
+        .describe(
+          "JavaScript async arrow function to execute. Prefer a single program that calls only the relevant Azure DevOps operationIds selected from MCP search, performs filtering/aggregation inside that one program, and chains on `response.data` from previous calls. Do not pass `organization`; the server already binds it for every request. Do not probe globals or use raw `fetch`; use only `codemode.azdoRequest(...)`."
+        )
+    }
   },
   async ({ code }) => {
     executeSequence += 1;

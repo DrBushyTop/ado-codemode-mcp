@@ -113,14 +113,23 @@ export interface AzureDevOpsApiOperation {
 export interface AzureDevOpsSearchOperation {
   operationId: string;
   rawOperationId: string;
+  summary: string;
   method: Uppercase<HttpMethod>;
   path: string;
   description: string;
+  area: string;
   tags: string[];
+  preview: boolean;
   parameters: ApiParameterDescriptor[];
-  requestBody?: ApiParameterDescriptor | undefined;
+  bodyRequired: boolean;
+  bodyDescription?: string | undefined;
+  bodySchema?: unknown;
   responseSchema?: unknown;
+  responseDescription?: string | undefined;
   defaultApiVersion: string;
+  consumes: string[];
+  produces: string[];
+  specVersion: string;
   implicitPathParams: string[];
   implicitQueryParams: string[];
 }
@@ -231,7 +240,16 @@ function summarizeSchema(value: unknown, depth = 0): unknown {
   const summary: Record<string, unknown> = {};
 
   for (const [key, entry] of Object.entries(record)) {
-    if (key === "description" || key === "format" || key === "enum" || key === "type") {
+    if (
+      key === "description" ||
+      key === "format" ||
+      key === "enum" ||
+      key === "type" ||
+      key === "required" ||
+      key === "default" ||
+      key === "example" ||
+      key === "examples"
+    ) {
       summary[key] = summarizeSchema(entry, depth + 1);
       continue;
     }
@@ -249,6 +267,22 @@ function summarizeSchema(value: unknown, depth = 0): unknown {
 
     if (key === "items") {
       summary[key] = summarizeSchema(entry, depth + 1);
+      continue;
+    }
+
+    if (
+      (key === "oneOf" || key === "anyOf" || key === "allOf") &&
+      Array.isArray(entry)
+    ) {
+      summary[key] = entry
+        .slice(0, 5)
+        .map((option) => summarizeSchema(option, depth + 1));
+      continue;
+    }
+
+    if (key === "additionalProperties") {
+      summary[key] =
+        typeof entry === "boolean" ? entry : summarizeSchema(entry, depth + 1);
     }
   }
 
@@ -489,19 +523,23 @@ export function toSearchOperation(
   return {
     operationId: operation.operationId,
     rawOperationId: operation.rawOperationId,
+    summary: operation.summary,
     method: operation.method,
     path: operation.path.replace(/^\/\{organization\}/, ""),
     description: operation.description,
+    area: operation.area,
     tags: operation.tags,
+    preview: operation.preview,
     parameters,
-    requestBody: operation.requestBody
-      ? {
-          ...operation.requestBody,
-          schema: summarizeSchema(operation.requestBody.schema)
-        }
-      : undefined,
+    bodyRequired: Boolean(operation.requestBody?.required),
+    bodyDescription: operation.requestBody?.description,
+    bodySchema: summarizeSchema(operation.requestBody?.schema),
     responseSchema: summarizeSchema(operation.responseSchema),
+    responseDescription: operation.responseDescription,
     defaultApiVersion: operation.apiVersion,
+    consumes: operation.consumes,
+    produces: operation.produces,
+    specVersion: operation.specVersion,
     implicitPathParams,
     implicitQueryParams
   };

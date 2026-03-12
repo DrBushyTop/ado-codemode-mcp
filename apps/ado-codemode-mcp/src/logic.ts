@@ -82,9 +82,7 @@ function searchCatalogNote(operations: AzureDevOpsSearchOperation[]): string[] {
   const operationsWithPathParams = operations.some(
     (operation) => operation.parameters.some((parameter) => parameter.in === "path")
   );
-  const operationsWithBodies = operations.some(
-    (operation) => operation.requestBody !== undefined
-  );
+  const operationsWithBodies = operations.some((operation) => operation.bodySchema !== undefined);
   const operationsWithSchemas = operations.some(
     (operation) => operation.responseSchema !== undefined
   );
@@ -95,7 +93,7 @@ function searchCatalogNote(operations: AzureDevOpsSearchOperation[]): string[] {
       ? "If an operation still shows required path parameters, discover and provide only those remaining values."
       : "Focus on query/body inputs; server-bound path context has already been applied.",
     operationsWithBodies
-      ? "If an operation has a requestBody schema, use that schema directly instead of guessing payload shape."
+      ? "If an operation has a bodySchema, use that schema directly instead of guessing payload shape."
       : "Prefer operations that do not require request bodies when they are sufficient for the task.",
     operationsWithSchemas
       ? "Use responseSchema to plan chaining and prefer response.data for later calls."
